@@ -1,7 +1,7 @@
 """
 libGlue console library.
 
-This library supplements typer and rich libraries.
+This library supplements Typer and Rich libraries :heart:.
 
 References
 ----------
@@ -46,15 +46,13 @@ install()
 
 log = logging.getLogger("rich")
 
+console = Console()
 logConsole = Console(stderr=True)
-
 recordConsole = Console(record=True)
 
 logging.basicConfig(
     level="INFO", format="%(message)s", datefmt="[%X]", handlers=[RichHandler(console=logConsole, markup=True)]
 )
-
-console = Console()
 
 
 def slugify(value, allow_unicode=False):
@@ -78,27 +76,27 @@ def slugify(value, allow_unicode=False):
 
 def banner(text):
     """Show text banner."""
-    print("")
-    print(59 * "*")
+    print("\n" + 59 * "*")
+
     if isinstance(text, list):
         for line in text:
             print(line)
     else:
         print(text)
-    print(59 * "*")
-    print("")
+    print(59 * "*" + "\n")
 
 
 CONSOLE_HTML_FORMAT = """\
 <!DOCTYPE html>
+
 <head>
-<meta charset="UTF-8">
-<style>
-  {stylesheet}
-  body {{ color: {foreground}; background-color: {background}; }}
-  pre {{ white-space: pre-wrap; white-space: -pre-wrap; word-wrap: break-word; }}
-  ::selection {{ background: #44475a; }}
-</style>
+  <meta charset="UTF-8">
+  <style>
+    {stylesheet}
+    body {{ color: {foreground}; background-color: {background}; }}
+    pre {{ white-space: pre-wrap; white-space: -pre-wrap; word-wrap: break-word; }}
+    ::selection {{ background: #44475a; }}
+  </style>
 </head>
 
 <html>
@@ -151,12 +149,12 @@ def panel(rich_text: str):
     console.print(Panel(rich_text))
 
 
-def print_condensed(value: str, prefix: str | None = None):
+def print_condensed(value: str | list, prefix: str | None = None):
     """
     Rich print with less new line breaks.
 
-    Rich adds a new line character after representing a list, we strip those by setting end to ''
-    and print a new line when the instance of facts[query] is not of type list.
+    Rich adds new line character after representing a list, we strip those by setting end to ''
+    and print a new line when the instance of `value` is not of type list.
     """
     if prefix:
         console.print(f"{prefix}", value, end="")
@@ -189,6 +187,7 @@ option_export = typer.Option(None, "--export", help="Export as HTML")
 class ConsoleRender:
     """Render console data."""
 
+    theme = "dracula"
     tree_list_keys = ("name", "node")
 
     def __init__(self, data, export: Path | None = None):
@@ -212,7 +211,9 @@ class ConsoleRender:
         """Export console output as HTML or SVG."""
         if self.export and self.export.suffix == ".html":
             self.console.save_html(str(self.export), theme=DRACULA, code_format=CONSOLE_HTML_FORMAT, clear=True)
-            log.info("🏭 exported console output as HTML: %s", self.export)
+            log.info(":factory: exported console output as HTML: %s", self.export)
+        elif self.export and self.export.suffix == ".svg":
+            self.console.save_svg(str(self.export), theme=DRACULA, clear=True)
 
     def _tree_from_list(self):
         """Render tree from list."""
@@ -271,7 +272,7 @@ class ConsoleRender:
 
         yaml.representer.SafeRepresenter.add_representer(None, default_representer)
 
-        self.console.print(Syntax(yaml.safe_dump(self.data), "yaml", theme="dracula"))
+        self.console.print(Syntax(yaml.safe_dump(self.data), "yaml", theme=self.theme))
 
         self._export()
 
@@ -289,7 +290,7 @@ class ConsoleRender:
                 for sub_item in value:
                     sub_branch.add(f"{sub_item}")
             else:
-                log.warning("Render tree does not support branch type: %s", type(node))
+                log.warning(":palm_tree: render tree does not support branch type: %s", type(node))
 
     def _parse_tree_list_branch(self, tree: Tree, branch_key: str, node: list) -> None:
         """Render tree list branch."""
@@ -310,7 +311,7 @@ class ConsoleRender:
             elif isinstance(node, (bool, str)):
                 tree.add(f"{self._stylize_key(branch_key)} {node}")
             else:
-                log.warning("Render tree target is compatible with `list` or `dict` not: %s", type(node))
+                log.warning(":palm_tree: render tree target is compatible with `list` or `dict` not: %s", type(node))
 
     def tree(self):
         """Render simple tree."""
@@ -338,17 +339,18 @@ class ConsoleRender:
             for value in self.data:
                 table.add_row(value)
         else:
-            log.error("table render target supports `list` and `dict` not: %s", type(self.data))
-            typer.Exit(1)
+            log.warning(":person_facepalming: table render target supports `list` and `dict` not: %s", type(self.data))
+            log.info(":innocent: I will render JSON instead :tongue:")
 
         self.console.print(table)
         self._export()
 
 
 def render_raw(data: list | dict | Table | Tree | Generator[Any, None, None], path: Path):
-    """Render Rich data."""
+    """Print raw Rich data."""
     console_render = ConsoleRender(data, path)
-    console_render.raw()
+    console_render.console.print(data)
+    console_render._export()
 
 
 def render_as(
@@ -376,7 +378,7 @@ def render_as(
 
 
 def read_password_or_exit(type: str):
-    """Read password from CLI or exit."""
+    """Get password from user input or exit."""
     password = getpass.getpass(f"Enter {type} password: ")
 
     if not password:
