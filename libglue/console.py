@@ -19,8 +19,6 @@ import getpass
 import importlib.util
 import logging
 import os
-import re
-import unicodedata
 from pathlib import Path
 from random import randint
 from typing import Any, Generator
@@ -50,42 +48,6 @@ console = Console()
 logConsole = Console(stderr=True)
 recordConsole = Console(record=True)
 
-logging.basicConfig(
-    level="INFO", format="%(message)s", datefmt="[%X]", handlers=[RichHandler(console=logConsole, markup=True)]
-)
-
-
-def slugify(value, allow_unicode=False):
-    """
-    Slugify.
-
-    Taken from https://github.com/django/django/blob/master/django/utils/text.py
-    Convert to ASCII if 'allow_unicode' is False. Convert spaces or repeated
-    dashes to single dashes. Remove characters that aren't alphanumerics,
-    underscores, or hyphens. Convert to lowercase. Also strip leading and
-    trailing whitespace, dashes, and underscores.
-    """
-    value = str(value)
-    if allow_unicode:
-        value = unicodedata.normalize("NFKC", value)
-    else:
-        value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii")
-    value = re.sub(r"[^\w\s-]", "", value.lower())
-    return re.sub(r"[-\s]+", "-", value).strip("-_")
-
-
-def banner(text):
-    """Show text banner."""
-    print("\n" + 59 * "*")
-
-    if isinstance(text, list):
-        for line in text:
-            print(line)
-    else:
-        print(text)
-    print(59 * "*" + "\n")
-
-
 CONSOLE_HTML_FORMAT = """\
 <!DOCTYPE html>
 
@@ -108,6 +70,10 @@ CONSOLE_HTML_FORMAT = """\
 </html>
 """
 
+logging.basicConfig(
+    level="INFO", format="%(message)s", datefmt="[%X]", handlers=[RichHandler(console=logConsole, markup=True)]
+)
+
 
 class Styles:
     """Custom styles."""
@@ -119,9 +85,6 @@ class Styles:
     key = "italic green"
 
 
-styles = Styles()
-
-
 class Links:
     """Rich links."""
 
@@ -129,59 +92,6 @@ class Links:
     def ssh(host: str):
         """Return SSH link."""
         return f"[{styles.host}][link ssh:{host}]{host}[/link ssh:{host}][/{styles.host}]"
-
-
-links = Links()
-
-
-class RainbowHighlighter(Highlighter):
-    """Rainbow highlighter."""
-
-    def highlight(self, text):
-        """Highlight strings."""
-        for index in range(len(text)):
-            text.stylize(f"color({randint(200, 220)})", index, index + 1)
-            text.style = "bold"
-
-
-def panel(rich_text: str):
-    """Print text in panel."""
-    console.print(Panel(rich_text))
-
-
-def print_condensed(value: str | list, prefix: str | None = None):
-    """
-    Rich print with less new line breaks.
-
-    Rich adds new line character after representing a list, we strip those by setting end to ''
-    and print a new line when the instance of `value` is not of type list.
-    """
-    if prefix:
-        console.print(f"{prefix}", value, end="")
-    else:
-        console.print(value, end="")
-
-    if not isinstance(value, list):
-        print()
-
-
-def load_cli_plugin(cli, entrypoint: str, *args: str):
-    """Load CLI plugin."""
-    if not os.path.isfile(entrypoint):
-        return
-
-    spec = importlib.util.spec_from_file_location("plugin", entrypoint)
-
-    if spec is None:
-        return
-
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)  # type: ignore
-    module.main(cli, *args)
-
-
-option_render = typer.Option(RenderTarget.PRETTY.value, help="Render as.")
-option_export = typer.Option(None, "--export", help="Export as HTML")
 
 
 class ConsoleRender:
@@ -346,6 +256,52 @@ class ConsoleRender:
         self._export()
 
 
+class RainbowHighlighter(Highlighter):
+    """Rainbow highlighter."""
+
+    def highlight(self, text):
+        """Highlight strings."""
+        for index in range(len(text)):
+            text.stylize(f"color({randint(200, 220)})", index, index + 1)
+            text.style = "bold"
+
+
+def panel(rich_text: str):
+    """Print text in panel."""
+    console.print(Panel(rich_text))
+
+
+def print_condensed(value: str | list, prefix: str | None = None):
+    """
+    Rich print with less new line breaks.
+
+    Rich adds new line character after representing a list, we strip those by setting end to ''
+    and print a new line when the instance of `value` is not of type list.
+    """
+    if prefix:
+        console.print(f"{prefix}", value, end="")
+    else:
+        console.print(value, end="")
+
+    if not isinstance(value, list):
+        print()
+
+
+def load_cli_plugin(cli, entrypoint: str, *args: str):
+    """Load CLI plugin."""
+    if not os.path.isfile(entrypoint):
+        return
+
+    spec = importlib.util.spec_from_file_location("plugin", entrypoint)
+
+    if spec is None:
+        return
+
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)  # type: ignore
+    module.main(cli, *args)
+
+
 def render_raw(data: list | dict | Table | Tree | Generator[Any, None, None], path: Path):
     """Print raw Rich data."""
     console_render = ConsoleRender(data, path)
@@ -386,3 +342,10 @@ def read_password_or_exit(type: str):
         raise SystemExit(1)
 
     return password
+
+
+styles = Styles()
+links = Links()
+
+option_render = typer.Option(RenderTarget.PRETTY.value, help="Render as")
+option_export = typer.Option(None, "--export", help="Export as HTML")

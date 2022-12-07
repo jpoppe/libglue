@@ -5,10 +5,11 @@ __copyright__ = "Copyright 2012-2022 Jasper Poppe"
 __license__ = "MIT"
 __status__ = "Development"
 
-
 import difflib
 import hashlib
 import json
+import re
+import unicodedata
 from abc import abstractmethod
 from pathlib import Path
 from typing import Any, Dict, List
@@ -233,3 +234,22 @@ def diff_string(old, new):
             output.append(red_background(old[i_0:i_1]))
             output.append(green_background(new[j_0:j_1]))
     return "".join(output)
+
+
+def slugify(value, allow_unicode=False):
+    """
+    Slugify.
+
+    Taken from https://github.com/django/django/blob/master/django/utils/text.py
+    Convert to ASCII if 'allow_unicode' is False. Convert spaces or repeated
+    dashes to single dashes. Remove characters that aren't alphanumerics,
+    underscores, or hyphens. Convert to lowercase. Also strip leading and
+    trailing whitespace, dashes, and underscores.
+    """
+    value = str(value)
+    if allow_unicode:
+        value = unicodedata.normalize("NFKC", value)
+    else:
+        value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii")
+    value = re.sub(r"[^\w\s-]", "", value.lower())
+    return re.sub(r"[-\s]+", "-", value).strip("-_")
