@@ -26,8 +26,9 @@ from random import randint
 from typing import Any, Generator
 
 import typer
+import yaml
 from _collections_abc import dict_keys
-from rich import print_json
+from rich import print, print_json
 from rich.console import Console
 from rich.highlighter import Highlighter
 from rich.logging import RichHandler
@@ -93,17 +94,18 @@ CONSOLE_HTML_FORMAT = """\
 <head>
 <meta charset="UTF-8">
 <style>
-{stylesheet}
-body {{ color: {foreground}; background-color: {background}; }}
-pre {{ white-space: pre-wrap; white-space: -pre-wrap; word-wrap: break-word; }}
-::selection {{ background: #44475a; }}
+  {stylesheet}
+  body {{ color: {foreground}; background-color: {background}; }}
+  pre {{ white-space: pre-wrap; white-space: -pre-wrap; word-wrap: break-word; }}
+  ::selection {{ background: #44475a; }}
 </style>
 </head>
+
 <html>
 <body>
-    <code>
-        <pre style="font-family:ui-monospace,'Fira Code',monospace">{code}</pre>
-    </code>
+  <code>
+    <pre style="font-family:ui-monospace,'Fira Code',monospace">{code}</pre>
+  </code>
 </body>
 </html>
 """
@@ -187,6 +189,8 @@ option_export = typer.Option(None, "--export", help="Export as HTML")
 class ConsoleRender:
     """Render console data."""
 
+    tree_list_keys = ("name", "node")
+
     def __init__(self, data, export: Path | None = None):
         """Initialize class variables."""
         self.console = console
@@ -208,23 +212,31 @@ class ConsoleRender:
         """Export console output as HTML or SVG."""
         if self.export and self.export.suffix == ".html":
             self.console.save_html(str(self.export), theme=DRACULA, code_format=CONSOLE_HTML_FORMAT, clear=True)
-            log.info("exported console output as HTML: %s", self.export)
+            log.info("🏭 exported console output as HTML: %s", self.export)
 
     def _tree_from_list(self):
         """Render tree from list."""
-        _data = {}
-        for item in self.data:
-            if "name" in item:
-                name = item["name"]
-                del item["name"]
-                _data[name] = item
-            else:
-                log.warning("`name` not found in self.data: %s", item)
-        if _data:
-            self.data = _data
+        if all(isinstance(item, str) for item in self.data):
+            log.info(":light_bulb: I don't know how to make a :palm_tree: from a list with strings")
+            log.info(":innocent: I will render a table instead :tongue:")
+            self.table()
+            return
 
-    def _tree_from_dict(self):
-        """Render tree from dict."""
+        tree_data = {}
+
+        for item in self.data:
+            for tree_list_key in self.tree_list_keys:
+                if tree_list_key in item:
+                    name = item[tree_list_key]
+                    del item[tree_list_key]
+                    tree_data[name] = item
+                    break
+            else:
+                log.warning(":palm_tree: no tree list key found found in item: %s (%s)", item, self.tree_list_keys)
+                log.warning(":light_bulb: if it makes sense to add a key to the `tree list keys`, please open a PR")
+
+        if tree_data:
+            self.data = tree_data
 
     def _stylize_key(self, key: str):
         """Stylize key."""
@@ -237,7 +249,12 @@ class ConsoleRender:
 
     def raw(self):
         """Render raw data."""
-        self.console.print(self.data)
+        if isinstance(self.data, (list, tuple)):
+            for item in self.data:
+                print(item)
+        else:
+            self.json()
+
         self._export()
 
     def pretty(self):
@@ -247,7 +264,6 @@ class ConsoleRender:
 
     def yaml(self):
         """Render data as YAML."""
-        import yaml
 
         def default_representer(dumper, data):
             """Remove Ansible references."""
@@ -256,48 +272,62 @@ class ConsoleRender:
         yaml.representer.SafeRepresenter.add_representer(None, default_representer)
 
         self.console.print(Syntax(yaml.safe_dump(self.data), "yaml", theme="dracula"))
+
         self._export()
+
+    def _parse_tree_dict_branch(self, tree: Tree, branch_key: str, node: dict) -> None:
+        """Render tree dict branch."""
+        branch = tree.add(self._stylize_key(branch_key))
+
+        for key, value in node.items():
+            if isinstance(value, dict):
+                self._parse_tree_branch(branch, value)
+            elif isinstance(value, (dict, int, str)):
+                branch.add(f"{self._stylize_key(key)} {value}")
+            elif isinstance(value, list):
+                sub_branch = branch.add(f"[bold][dim]{key}")
+                for sub_item in value:
+                    sub_branch.add(f"{sub_item}")
+            else:
+                log.warning("Render tree does not support branch type: %s", type(node))
+
+    def _parse_tree_list_branch(self, tree: Tree, branch_key: str, node: list) -> None:
+        """Render tree list branch."""
+        if len(node) < 2:
+            tree.add(f"{self._stylize_key(branch_key)} {node}")
+        else:
+            branch = tree.add(self._stylize_key(branch_key))
+            for item in node:
+                branch.add(item)
+
+    def _parse_tree_branch(self, tree: Tree, data: Any) -> None:
+        """Render tree branch."""
+        for branch_key, node in data.items():
+            if isinstance(node, dict):
+                self._parse_tree_dict_branch(tree, branch_key, node)
+            elif isinstance(node, list):
+                self._parse_tree_list_branch(tree, branch_key, node)
+            elif isinstance(node, (bool, str)):
+                tree.add(f"{self._stylize_key(branch_key)} {node}")
+            else:
+                log.warning("Render tree target is compatible with `list` or `dict` not: %s", type(node))
 
     def tree(self):
         """Render simple tree."""
-        log.info("render data as tree")
-        tree = Tree("Tree", guide_style="bold bright_blue")
+        tree = Tree(":palm_tree::evergreen_tree::tanabata_tree::christmas_tree:", guide_style="bold bright_blue")
 
         if isinstance(self.data, list):
             self._tree_from_list()
 
         if isinstance(self.data, dict):
-            for key, node in self.data.items():
-                if isinstance(node, dict):
-                    branch = tree.add(self._stylize_key(key))
-                    for key, value in node.items():
-                        if isinstance(value, (dict, int, str)):
-                            branch.add(f"{self._stylize_key(key)} {value}")
-                        elif isinstance(value, list):
-                            sub_branch = branch.add(f"[bold][dim]{key}")
-                            for sub_item in value:
-                                sub_branch.add(f"{sub_item}")
-                        else:
-                            log.warning("Render tree does not support branch type: %s", type(node))
-
-                elif isinstance(node, list):
-                    if len(node) < 2:
-                        tree.add(f"{self._stylize_key(key)} {node}")
-                    else:
-                        branch = tree.add(self._stylize_key(key))
-                        for item in node:
-                            branch.add(item)
-                elif isinstance(node, (bool, str)):
-                    tree.add(f"{self._stylize_key(key)} {node}")
-                else:
-                    log.warning("Render tree target is compatible with `list` or `dict` not: %s", type(node))
-
+            self._parse_tree_branch(tree, self.data)
             self.console.print(tree)
             self._export()
 
     def table(self):
         """Render simple table."""
         table = Table(show_header=False, expand=False)
+
         if isinstance(self.data, dict):
             for key, value in self.data.items():
                 if isinstance(value, str):
@@ -308,8 +338,9 @@ class ConsoleRender:
             for value in self.data:
                 table.add_row(value)
         else:
-            log.error("Table render target is compatible with `list` or `dict` not: %s", type(self.data))
+            log.error("table render target supports `list` and `dict` not: %s", type(self.data))
             typer.Exit(1)
+
         self.console.print(table)
         self._export()
 
@@ -332,6 +363,8 @@ def render_as(
         console_render.json()
     elif target == RenderTarget.PRETTY:
         console_render.pretty()
+    elif target == RenderTarget.RAW:
+        console_render.raw()
     elif target == RenderTarget.TABLE:
         console_render.table()
     elif target == RenderTarget.TREE:
