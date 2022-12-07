@@ -248,7 +248,7 @@ def bytes_to_human(bytes: float):
 
 
 def get_removable_block_devices():
-    """Return list with removable block devices."""
+    """Return list with removable block devices and partitions."""
     fields = [
         "NAME",
         "LABEL",
@@ -263,13 +263,13 @@ def get_removable_block_devices():
         "MOUNTPOINT",
     ]
 
-    lsblk_result = shell("lsblk", "-J", "-p", "--output", ",".join(fields))
+    lsblk_result = shell("lsblk", "--json", "--paths", "--output", ",".join(fields))
 
     if not lsblk_result:
         log.error(":persion_facepalming: lsblk response is empty")
         raise SystemExit(1)
 
-    all_devices = json.loads(lsblk_result.decode())
+    all_devices = json.loads(lsblk_result)
 
     devices = []
     for device in all_devices["blockdevices"]:
@@ -286,7 +286,7 @@ def get_removable_block_devices():
 
             _device = {"name": device["name"], "model": f"{vendor}, {model}", "size": device["size"]}
 
-            if "partitions" in device:
+            if "children" in device:
                 partitions = {}
                 for child in device["children"]:
                     if child["type"] != "part":
