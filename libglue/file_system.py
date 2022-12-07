@@ -20,7 +20,7 @@ import psutil
 import yaml
 from rich.prompt import Confirm
 
-from .console import banner, console, log
+from .console import console, log
 from .convert import convert
 from .data import load_json, sort_dictionary
 from .shell import shell
@@ -347,6 +347,18 @@ def unmount(device):
     shell("mount", device)
 
 
+def __banner(text):
+    """Show text banner."""
+    print("\n" + 59 * "*")
+
+    if isinstance(text, list):
+        for line in text:
+            print(line)
+    else:
+        print(text)
+    print(59 * "*" + "\n")
+
+
 def confirm_write(block_device):
     """Confirm writing image to SD card."""
     target_device = block_device["name"]
@@ -355,7 +367,7 @@ def confirm_write(block_device):
         f"if you continue all data on device: {target_device}",
         "will be overwritten, THIS IS IRREVERSIBLE!!!",
     ]
-    banner("\n".join(msg))
+    __banner("\n".join(msg))
     print("* Device which will be overwritten:\n")
     print(f"{block_device['model']} ({block_device['size']})")
     print(f"\n*{block_device['name']}:")
@@ -372,7 +384,7 @@ def confirm_write(block_device):
 
 def select():
     """Select block device to write to."""
-    banner("Select target block device (SD Card).")
+    __banner("Select target block device (SD Card).")
     block_devices = get_removable_block_devices()
 
     if not block_devices:
@@ -398,7 +410,7 @@ def select():
         raise SystemExit(1)
     else:
         device = block_devices[block_device_number]
-        banner(f'selected target device -> {device["name"]}')
+        __banner(f'selected target device -> {device["name"]}')
         return device
 
 
@@ -512,7 +524,7 @@ def unmount_advanced():
 #
 # def _write_image(image_file, target):
 #     """Write an image with dd."""
-#     utils.banner('writing image to block device (SD card)')
+#     utils.__banner('writing image to block device (SD card)')
 #     print('* {} -> {}'.format(image_file, target))
 #     print('* this will probably take a while...\n')
 #     cmd = ['dd', 'if={}'.format(image_file), 'of={}'.format(target),
@@ -536,7 +548,7 @@ def unmount_advanced():
 #
 # def _grow_partition(target_device_name):
 #     """Grow partition size to the max."""
-#     utils.banner('grow system partition')
+#     utils.__banner('grow system partition')
 #     print('* growing {}'.format(target_device_name))
 #     partitions = shell('parted', target_device_name, '-ms', 'unit s p')
 #     partition = next((partition
