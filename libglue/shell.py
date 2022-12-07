@@ -13,11 +13,9 @@ import sys
 from pathlib import Path
 from typing import Dict, List
 
-from rich.console import Console
+from rich import print
 
-from .console import log
-
-console = Console()
+from .console import console, log
 
 
 def run_command(
@@ -37,7 +35,7 @@ def run_command(
 
 
 def run_command_show_output(command: List[str], env: Dict[str, str] | None = None, cwd: Path | None = None):
-    """Run shell command and show the output."""
+    """Run shell command and show output."""
     if isinstance(command, str):
         command = shlex.split(command)
 
@@ -50,69 +48,66 @@ def run_command_show_output(command: List[str], env: Dict[str, str] | None = Non
 
     subprocess_env = {**os.environ, **env} if env else os.environ
 
-    process = subprocess.Popen(
+    with subprocess.Popen(
         command, cwd=cwd, env=subprocess_env, stdout=sys.stdout, stderr=sys.stderr, encoding="utf-8", bufsize=1
-    )
+    ) as process:
+        process.wait()
 
-    process.wait()
+        return_code = process.poll()
 
-    return_code = process.poll()
+        console.print(f"return code: {return_code}")
+        console.print(80 * "*")
+        console.print("end raw command output")
+        console.print(80 * "*")
 
-    print(return_code)
+        # process = subprocess.Popen(command,
+        #                            errors='replace',
+        #                            shell=True,
+        #                            stdout=subprocess.PIPE,
+        #                            stderr=subprocess.PIPE)
 
-    console.print()
-    console.print(80 * "*")
-    console.print("end raw command output")
-    console.print(80 * "*")
+        # while True:
+        #     if not process.stdout:
+        #         break
 
-    # process = subprocess.Popen(command,
-    #                            errors='replace',
-    #                            shell=True,
-    #                            stdout=subprocess.PIPE,
-    #                            stderr=subprocess.PIPE)
+        #     realtime_output = process.stdout.readline()
 
-    # while True:
-    #     if not process.stdout:
-    #         break
+        #     if realtime_output == '' and process.poll() is not None:
+        #         break
 
-    #     realtime_output = process.stdout.readline()
+        #     if realtime_output:
+        #         print(realtime_output.strip(), flush=True)
 
-    #     if realtime_output == '' and process.poll() is not None:
-    #         break
+        # print('running poooo....')
 
-    #     if realtime_output:
-    #         print(realtime_output.strip(), flush=True)
+        # while True:
+        #     if not process.stdout:
+        #         break
 
-    # print('running poooo....')
+        #     output = process.stdout.readline()
+        #     if process.poll() is not None:
+        #         break
 
-    # while True:
-    #     if not process.stdout:
-    #         break
+        #     if output:
+        #         print(output.strip())
 
-    #     output = process.stdout.readline()
-    #     if process.poll() is not None:
-    #         break
+        # if process.stderr:
+        #     for line in process.stderr:
+        #         sys.stderr.write(line)
 
-    #     if output:
-    #         print(output.strip())
+        # if process.stdout:
+        #     for line in process.stdout:
+        #         sys.stdout.write(line)
 
-    # if process.stderr:
-    #     for line in process.stderr:
-    #         sys.stderr.write(line)
+        # while True:
+        #     if not process.stdout:
+        #         break
 
-    # if process.stdout:
-    #     for line in process.stdout:
-    #         sys.stdout.write(line)
+        #     line = process.stdout.readline()
+        #     if not line:
+        #         break
 
-    # while True:
-    #     if not process.stdout:
-    #         break
-
-    #     line = process.stdout.readline()
-    #     if not line:
-    #         break
-
-    # return subprocess.run(command, cwd=cwd, env=subprocess_env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        # return subprocess.run(command, cwd=cwd, env=subprocess_env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
 
 def execute(command: str):
@@ -123,46 +118,34 @@ def execute(command: str):
 
 def run(command, shell=False, capture_output=True, text=True):
     """Execute shell command."""
-    result = subprocess.run(command, shell=shell, capture_output=capture_output, text=text)
+    result = subprocess.run(command, shell=shell, capture_output=capture_output, text=text, check=True)
     if capture_output:
         print(result.stdout)
         print(result.stderr)
         print(f"error_code: {result.returncode}")
 
 
-def shell(*args):
+def shell(*args, **kwargs):
     """Run a local command."""
     command = " ".join(args)
-    log.info("- running shell command: %s", command)
-    proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=sys.stdin)
-    stdout, stderr = proc.communicate()
-    return_code = proc.wait()
-    if return_code:
-        if stdout:
-            log.info(stdout.strip())
-        if stderr:
-            log.error(stderr.strip())
-            sys.exit(1)
-    else:
+
+    log.info(":rocket: running shell command:")
+    log.info(":computer: %s", command)
+
+    with subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=sys.stdin, **kwargs) as process:
+        stdout, stderr = process.communicate()
+        return_code = process.wait()
+
+        if return_code:
+            if stdout:
+                log.info(stdout.strip())
+                return stdout
+
+            if stderr:
+                log.error(stderr.strip())
+                raise SystemError(1)
+
         if stdout:
             return stdout.strip()
-        return stdout
 
-
-def shell_cd(path, *args):
-    """Run a local command."""
-    command = " ".join(args)
-    print(f"- running shell command:\n  {command}\n")
-    proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=sys.stdin, cwd=path)
-    stdout, stderr = proc.communicate()
-    return_code = proc.wait()
-    if return_code:
-        if stdout:
-            log.info(stdout.strip())
-        if stderr:
-            log.error(stderr.strip())
-            sys.exit(1)
-    else:
-        if stdout:
-            return stdout.strip()
-        return stdout
+        return stderr
