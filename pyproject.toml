@@ -1,0 +1,4 @@
+[tool.isort]
+include_trailing_comma = false
+line_length = 120
+profile = "black"
