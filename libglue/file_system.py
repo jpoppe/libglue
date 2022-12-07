@@ -299,13 +299,6 @@ def get_removable_block_devices():
     return devices
 
 
-def list_media():
-    """List inserted media."""
-    removeable_devices = get_removable_block_devices()
-    if removeable_devices:
-        pprint.pprint(removeable_devices)
-
-
 def render_template(template_file, destination_file, template_vars, chmod):
     """Render a template file."""
     template = string.Template(read_file(template_file))
