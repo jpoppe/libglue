@@ -18,7 +18,6 @@ from typing import Any
 
 import psutil
 import yaml
-from rich.pretty import pprint
 from rich.prompt import Confirm
 
 from .console import banner, console, log
@@ -249,7 +248,7 @@ def bytes_to_human(bytes: float):
 
 
 def get_removable_block_devices():
-    """Return a list with removable block devices."""
+    """Return list with removable block devices."""
     fields = [
         "NAME",
         "LABEL",
@@ -266,11 +265,14 @@ def get_removable_block_devices():
 
     lsblk_result = shell("lsblk", "-J", "-p", "--output", ",".join(fields))
 
+    if not lsblk_result:
+        log.error(":persion_facepalming: lsblk response is empty")
+        raise SystemExit(1)
+
     all_devices = json.loads(lsblk_result.decode())
 
     devices = []
     for device in all_devices["blockdevices"]:
-        pprint(device)
         if device["hotplug"]:
             if device["vendor"]:
                 vendor = device["vendor"].strip().capitalize()
@@ -282,7 +284,7 @@ def get_removable_block_devices():
             else:
                 model = "Unknown"
 
-            _device = {"name": device["name"], "model": "{}, {}".format(vendor, model), "size": device["size"]}
+            _device = {"name": device["name"], "model": f"{vendor}, {model}", "size": device["size"]}
 
             if "partitions" in device:
                 partitions = {}
@@ -294,8 +296,7 @@ def get_removable_block_devices():
                 _device["partitions"] = partitions
 
             devices.append(_device)
-    print("#########################")
-    print(devices)
+
     return devices
 
 
