@@ -7,8 +7,14 @@ __status__ = "Development"
 
 
 import sys
+from pathlib import Path
 
 
 def is_windows():
-    """Return when the used operating system is Windows."""
-    return True if sys.platform in ["win32", "cygwin"] else False
+    """Return True when operating system Windows."""
+    return sys.platform in ["win32", "cygwin"]
+
+
+def is_systemd():
+    """Return True when operating system is based on systemd (Requires root rights)."""
+    return "systemd" in str(Path("/proc/1/exe").readlink())
