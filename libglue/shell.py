@@ -112,7 +112,7 @@ def run_command_show_output(command: List[str], env: Dict[str, str] | None = Non
 
 def execute(command: str):
     """Run simple string based shell command."""
-    log.info(":rocket: running command: %s", command)
+    log.info(":computer: %s", command)
     subprocess.run(command, shell=True, check=False)
 
 
@@ -127,10 +127,7 @@ def run(command, shell=False, capture_output=True, text=True):
 
 def shell(*args, **kwargs):
     """Run a local command."""
-    command = " ".join(args)
-
-    log.info(":rocket: running shell command")
-    log.info(":computer: %s", command)
+    log.info(":computer: %s", " ".join(args))
 
     with subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=sys.stdin, **kwargs) as process:
         stdout, stderr = process.communicate()
