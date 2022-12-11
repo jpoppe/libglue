@@ -557,6 +557,10 @@ def unmount_tree(root: Path):
         if partition.mountpoint.startswith(str(root)):
             mounted_devices.append(partition.mountpoint)
 
+    if not mounted_devices:
+        log.info(":palm_tree: no mounted devices found in: %s", root)
+        return
+
     mounted_devices.reverse()
     for device in mounted_devices:
         shell("sudo", "umount", device)
