@@ -247,13 +247,14 @@ def bytes_to_human(bytes: float):
     return f'{("%.2f" % bytes).rstrip("0").rstrip(".")} {size_suffixes[index]}'
 
 
-def get_removable_block_devices():
-    """Return list with removable block devices and partitions."""
+def get_block_devices():
+    """Return dict with block devices."""
     fields = [
         "NAME",
         "LABEL",
         "SIZE",
         "PARTLABEL",
+        "UUID",
         "FSTYPE",
         "MODEL",
         "TYPE",
@@ -269,32 +270,47 @@ def get_removable_block_devices():
         log.error(":persion_facepalming: lsblk response is empty")
         raise SystemExit(1)
 
-    all_devices = json.loads(lsblk_result)
+    return json.loads(lsblk_result)
+
+
+def get_removable_block_devices(excluded_uuids: list[str] | None = None, full=False):
+    """Return list with removable block devices and partitions."""
+    all_devices = get_block_devices()
 
     devices = []
     for device in all_devices["blockdevices"]:
-        if device["hotplug"]:
-            if device["vendor"]:
-                vendor = device["vendor"].strip().capitalize()
-            else:
-                vendor = "Unknown"
+        if not device["hotplug"]:
+            continue
 
-            if device["model"]:
-                model = device["model"].strip()
-            else:
-                model = "Unknown"
+        if device["vendor"]:
+            vendor = device["vendor"].strip().capitalize()
+        else:
+            vendor = "Unknown"
 
-            _device = {"name": device["name"], "model": f"{vendor}, {model}", "size": device["size"]}
+        if device["model"]:
+            model = device["model"].strip()
+        else:
+            model = "Unknown"
 
-            if "children" in device:
-                partitions = {}
-                for child in device["children"]:
-                    if child["type"] != "part":
-                        continue
-                    partition_string = "{size} (fstype: {fstype}, label: {label})"
-                    partitions[child["name"]] = partition_string.format(**child)
-                _device["partitions"] = partitions
+        _device = {"name": device["name"], "model": f"{vendor}, {model}", "size": device["size"]}
 
+        if "children" in device:
+            partitions = {}
+            for child in device["children"]:
+                if child["type"] != "part":
+                    continue
+
+                if not excluded_uuids or child["uuid"] not in excluded_uuids:
+                    if full:
+                        partition_name = child["name"]
+                        del child["name"]
+                        partitions[partition_name] = child
+                    else:
+                        partition_string = "{size} (fstype: {fstype}, label: {label}, uuid: {uuid})"
+                        partitions[child["name"]] = partition_string.format(**child)
+            _device["partitions"] = partitions
+
+        if _device["partitions"]:
             devices.append(_device)
 
     return devices
@@ -337,17 +353,61 @@ def requires_superuser_rights():
         raise SystemExit(1)
 
 
-def mount(device, mount_point):
-    """Mount a partition."""
-    shell("mount", device, mount_point)
+def get_mount_point_devices(device: Path, mount_point: Path):
+    """Return mount point devices."""
+    return [
+        partition
+        for partition in psutil.disk_partitions()
+        if partition.device == str(device) and partition.mountpoint == str(mount_point)
+    ]
 
 
-def unmount(device):
+def get_device_mount_points(mount_point: Path):
+    """Return mount points."""
+    return [partition for partition in psutil.disk_partitions() if partition.mountpoint == str(mount_point)]
+
+
+def verify_mount(device: Path, mount_point: Path):
+    """Return True when mounted, False when unmounted, exit when mismatch."""
+    if not mount_point.is_mount():
+        return False
+
+    device_mount_points = get_device_mount_points(mount_point)
+
+    if len(device_mount_points) > 1:
+        device_mount_points = [mount_point.device for mount_point in device_mount_points]
+        log.critical(
+            ":scream_cat: multiple devices are mounted on %s (%s)", mount_point, " & ".join(device_mount_points)
+        )
+        raise SystemExit(1)
+
+    if not mount_point:
+        log.critical(":scream_cat: expected device %s to be mounted on instead of %s", device, mount_point)
+        raise SystemExit(1)
+
+    log.info(":floppy_disk: device %s is already mounted :smile: on %s", device, mount_point)
+
+    return True
+
+
+def mount(device: Path, mount_point: Path):
+    """Mount device."""
+    if verify_mount(device, mount_point):
+        return
+
+    shell("sudo", "mount", str(device), str(mount_point))
+
+
+def unmount(device: Path):
     """Unmount a partition."""
-    shell("mount", device)
+    if not device.is_mount():
+        log.info("device is not mounted: %s", device)
+        return
+
+    shell("sudo", "umount", str(device))
 
 
-def __banner(text):
+def __banner(text: str):
     """Show text banner."""
     print("\n" + 59 * "*")
 
@@ -388,12 +448,12 @@ def select():
     block_devices = get_removable_block_devices()
 
     if not block_devices:
-        print("\ncould not find any removable block device for writing")
-        print("please insert media and try again...")
+        log.info(":person_facepalming: could not find any removable block device for writing")
+        log.info(":floppy_disk: please insert media and try again...")
         raise SystemExit(1)
 
     plural = "" if len(block_devices) == 1 else "s"
-    print(f"- found {len(block_devices)} removable device{plural}:")
+    log.info(":sleuth_or_spy: found {%s} removable device{%s}:", len(block_devices), plural)
     for index, device in enumerate(block_devices):
         description = "  {index}: {name} ({size}) ({model})"
         print(description.format(index=index, **device))
@@ -406,7 +466,7 @@ def select():
         if block_device_number not in range(0, len(block_devices)):
             raise ValueError
     except ValueError:
-        print("\ncancelled operation, will exit now...")
+        log.info("cancelled operation, will exit now...")
         raise SystemExit(1)
     else:
         device = block_devices[block_device_number]
@@ -418,10 +478,10 @@ def prepare_generic(block_device):
     """
     Prepare media.
 
-    To dump partition table:
+    Dump partition table:
         sudo sfdisk -d /dev/mmcblk0 > ./files/partition_table
     """
-    print("- zapping removable media")
+    log.info(":toilet: zapping removable media")
     shell("wipefs", "--all", "--force", block_device["name"])
     shell("sgdisk", "--zap-all", block_device["name"])
     shell("sgdisk", "--clear", block_device["name"])
@@ -436,13 +496,13 @@ def prepare_generic(block_device):
 
     os.system("partprobe")
 
-    print("- creating vfat file system on boot partition")
+    log.info(":floppy_disk: creating vfat file system on boot partition")
     if Path(block_device["name"] + "1").is_block_device():
         shell("mkfs.vfat", block_device["name"] + "1")
     elif Path(block_device["name"] + "p1").is_block_device():
         shell("mkfs.vfat", block_device["name"] + "p1")
 
-    print("- creating ext4 file system on root partition")
+    print(":floppy_disk: creating ext4 file system on root partition")
     if Path(block_device["name"] + "2").is_block_device():
         shell("mkfs.ext4", "-O", "^has_journal", block_device["name"] + "2")
     elif Path(block_device["name"] + "p2").is_block_device():
@@ -458,7 +518,7 @@ def prepare(block_device):
     To dump partition table:
         sudo sfdisk -d /dev/mmcblk0 > ./files/partition_table
     """
-    print("- zapping removable media")
+    log.info(":toilet: zapping removable media")
     shell("wipefs", "--all", "--force", block_device["name"])
     shell("sgdisk", "--zap-all", block_device["name"])
 
@@ -472,32 +532,34 @@ def prepare(block_device):
     # os.system(f'sfdisk --wipe=always
     # --wipe-partitions=always {block_device["name"]} < ./files/partition_table')
 
-    print("- creating partition tables")
+    log.info(":table_tennis_paddle_and_ball: creating partition tables")
     os.system(f'sfdisk {block_device["name"]} < ./files/partition_table')
     os.system("partprobe")
 
-    print("- creating vfat file system on boot partition")
+    log.info(":floppy_disk: creating vfat file system on boot partition")
     if Path(block_device["name"] + "1").is_block_device():
         shell("mkfs.vfat", block_device["name"] + "1")
     elif Path(block_device["name"] + "p1").is_block_device():
         shell("mkfs.vfat", block_device["name"] + "p1")
 
-    print("- creating ext4 file system on root partition")
+    log.info(":floppy_disk: creating ext4 file system on root partition")
     if Path(block_device["name"] + "2").is_block_device():
         shell("mkfs.ext4", "-O", "^has_journal", block_device["name"] + "2")
     elif Path(block_device["name"] + "p2").is_block_device():
         shell("mkfs.ext4", "-O", "^has_journal", block_device["name"] + "p2")
 
 
-def unmount_advanced():
-    """Unmount mounted paths."""
+def unmount_tree(root: Path):
+    """Unmount mounts from given root path."""
     mounted_devices = []
+
     for partition in psutil.disk_partitions():
-        if partition.mountpoint.startswith("/tmp/awakenodes"):
+        if partition.mountpoint.startswith(str(root)):
             mounted_devices.append(partition.mountpoint)
+
     mounted_devices.reverse()
     for device in mounted_devices:
-        shell("umount", device)
+        shell("sudo", "umount", device)
 
 
 # def _mount_image(image_file, partition, bytes_offset):
