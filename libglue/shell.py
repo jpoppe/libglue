@@ -129,7 +129,7 @@ def shell(*args, **kwargs):
     """Run a local command."""
     command = " ".join(args)
 
-    log.info(":rocket: running shell command:")
+    log.info(":rocket: running shell command")
     log.info(":computer: %s", command)
 
     with subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=sys.stdin, **kwargs) as process:
