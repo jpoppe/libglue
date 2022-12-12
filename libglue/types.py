@@ -18,15 +18,16 @@ JSONDict = Dict[str, JSONValue]
 class HelpPanel(str, Enum):
     """Help panel titles."""
 
-    Cache = "Cache"
-    Configuration = "Configuration"
-    Info = "Info"
-    Lab = "Lab"
-    Manage = "Manage"
-    Ops = "Ops"
-    Sync = "Sync"
-    Test = "Test"
-    View = "View"
+    Cache = "Cache :floppy_disk:"
+    Configuration = "Configuration :unicorn_face:"
+    Danger = ":dragon: DANGER :fire:"
+    Info = "Info :information_desk_person:"
+    Lab = "Lab :test_tube:"
+    Manage = "Manage :briefcase:"
+    Ops = "Ops :lion:"
+    Sync = "Sync :floppy_disk:"
+    Test = "Test :factory:"
+    View = "View :eagle:"
 
 
 @unique
