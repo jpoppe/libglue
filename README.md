@@ -35,7 +35,7 @@ libGlue is a *work in progress* general Python library with focus on automation.
 Install in development mode:
 
 ```bash
-git clone git@github.com:jpoppe/libglue.git
+git clone --depth=1 https://github.com/jpoppe/libglue.git
 pip install --editable .
 pip install --editable .[dev] # to include development dependencies
 ```
