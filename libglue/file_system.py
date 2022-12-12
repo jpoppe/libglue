@@ -279,6 +279,8 @@ def get_removable_block_devices(excluded_uuids: list[str] | None = None, full=Fa
 
     devices = []
     for device in all_devices["blockdevices"]:
+        unpartitioned_block_device = "children" not in device
+
         if not device["hotplug"]:
             continue
 
@@ -310,7 +312,7 @@ def get_removable_block_devices(excluded_uuids: list[str] | None = None, full=Fa
                         partitions[child["name"]] = partition_string.format(**child)
             _device["partitions"] = partitions
 
-        if _device["partitions"]:
+        if unpartitioned_block_device or "partitions" in _device:
             devices.append(_device)
 
     return devices
