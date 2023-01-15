@@ -1,4 +1,4 @@
-"""File systems library."""
+"""libGlue file system library."""
 
 __author__ = "Jasper Poppe"
 __copyright__ = "Copyright 2012-2022 Jasper Poppe"
@@ -8,10 +8,10 @@ __status__ = "Development"
 import json
 import os
 import shutil
-import string
 import subprocess
 import sys
 import time
+from contextlib import contextmanager
 from importlib import resources
 from pathlib import Path
 from typing import Any
@@ -25,6 +25,18 @@ from .convert import convert
 from .data import load_json, sort_dictionary
 from .shell import shell
 from .types import WriteFlags
+
+
+@contextmanager
+def cd(path: Path):
+    """CD with context."""
+    previous_path = Path.cwd()
+    os.chdir(path.expanduser())
+
+    try:
+        yield
+    finally:
+        os.chdir(previous_path)
 
 
 def find_root(directory: Path, match: str = ".git"):
@@ -89,7 +101,7 @@ def load_yaml_directory_with_names(directory: Path, type: str):
     return {file.stem: load_yaml_file(file) for file in get_directory_paths(directory, type)}
 
 
-def load_json_file(path: Path, _include_age: bool = False):
+def load_json_file(path: Path):
     """Read JSON file and return Python dictionary."""
     try:
         return load_json(read_file(path))
@@ -124,11 +136,6 @@ def read_file(file_name: Path):
     except IOError as error:
         log.error("failed to read file (%s)", error)
         raise SystemExit(1) from error
-
-
-def read_yaml_file(file_name: Path):
-    """Read YAML file, return Python object."""
-    return yaml.safe_load(read_file(file_name))
 
 
 def write_yaml_file(file_name: Path, data: Any):
@@ -318,29 +325,22 @@ def get_removable_block_devices(excluded_uuids: list[str] | None = None, full=Fa
     return devices
 
 
-def render_template(template_file, destination_file, template_vars, chmod):
-    """Render a template file."""
-    template = string.Template(read_file(template_file))
-    write_file(destination_file, template.substitute(template_vars))
-    if chmod:
-        os.chmod(destination_file, int(str(chmod), 8))
-
-
-def download(url, destination):
+def download(url: str, destination: Path):
     """Download file to destination."""
-    destination_path = destination.rsplit("/", 1)[0]
+    destination_path = destination.parent
     create_directory(destination_path)
 
-    if os.path.isfile(destination):
-        print(f"- destination file found: {destination}")
-    else:
-        subprocess.call(["wget", "--directory-prefix", destination_path, "--content-disposition", url])
+    if destination.is_file():
+        log.info(f"download destination already exists: {destination}")
+        return
+
+    subprocess.call(["wget", "--directory-prefix", destination_path, "--content-disposition", url])
 
 
 def untar(source, destination, path=None):
     """Untar an archive."""
     create_directory(destination)
-    print(f'- extracting: {source.rsplit("/", 1)[1]} to {destination})')
+    log.info(f'extracting: {source.rsplit("/", 1)[1]} to {destination})')
     if path:
         shell("tar", "--strip-components", "1", "-xf", source, "-C", destination, path)
     else:
@@ -379,7 +379,9 @@ def verify_mount(device: Path, mount_point: Path):
     if len(device_mount_points) > 1:
         device_mount_points = [mount_point.device for mount_point in device_mount_points]
         log.critical(
-            ":scream_cat: multiple devices are mounted on %s (%s)", mount_point, " & ".join(device_mount_points)
+            ":scream_cat: multiple devices are mounted on %s (%s)",
+            mount_point,
+            " & ".join(device_mount_points),
         )
         raise SystemExit(1)
 
@@ -401,7 +403,7 @@ def mount(device: Path, mount_point: Path):
 
 
 def unmount(device: Path):
-    """Unmount a partition."""
+    """Unmount device or partition."""
     if not device.is_mount():
         log.info("device is not mounted: %s", device)
         return
@@ -409,44 +411,9 @@ def unmount(device: Path):
     shell("sudo", "umount", str(device))
 
 
-def __banner(text: str):
-    """Show text banner."""
-    print("\n" + 59 * "*")
-
-    if isinstance(text, list):
-        for line in text:
-            print(line)
-    else:
-        print(text)
-    print(59 * "*" + "\n")
-
-
-def confirm_write(block_device):
-    """Confirm writing image to SD card."""
-    target_device = block_device["name"]
-    msg = [
-        "CAUTION\n",
-        f"if you continue all data on device: {target_device}",
-        "will be overwritten, THIS IS IRREVERSIBLE!!!",
-    ]
-    __banner("\n".join(msg))
-    print("* Device which will be overwritten:\n")
-    print(f"{block_device['model']} ({block_device['size']})")
-    print(f"\n*{block_device['name']}:")
-    if block_device["partitions"]:
-        for partition, description in block_device["partitions"].items():
-            print(f"  {partition}: {description}")
-    print('\ntype "yes" to write image to SD or enter any other to exit:')
-    response = input("-> ")
-    if response == "yes":
-        return True
-
-    return False
-
-
 def select():
     """Select block device to write to."""
-    __banner("Select target block device (SD Card).")
+    print("Select target block device (SD Card).")
     block_devices = get_removable_block_devices()
 
     if not block_devices:
@@ -472,87 +439,16 @@ def select():
         raise SystemExit(1)
     else:
         device = block_devices[block_device_number]
-        __banner(f'selected target device -> {device["name"]}')
+        print(f'selected target device -> {device["name"]}')
         return device
-
-
-def prepare_generic(block_device):
-    """
-    Prepare media.
-
-    Dump partition table:
-        sudo sfdisk -d /dev/mmcblk0 > ./files/partition_table
-    """
-    log.info(":toilet: zapping removable media")
-    shell("wipefs", "--all", "--force", block_device["name"])
-    shell("sgdisk", "--zap-all", block_device["name"])
-    shell("sgdisk", "--clear", block_device["name"])
-
-    # Partition 1 - Use the last 200MB, set partition type to ESP,
-    # enable the legacy boot attribute
-    shell("sgdisk", "--new=1:0:+200M", "--typecode=1:ef00", "--attributes=1:set:2", block_device["name"])
-
-    # Partition 2 - Use the whole partition size, except the last 200MB,
-    # set partition type to Linux
-    shell("sgdisk", "--largest-new=2", "--typecode=2:8300", block_device["name"])
-
-    os.system("partprobe")
-
-    log.info(":floppy_disk: creating vfat file system on boot partition")
-    if Path(block_device["name"] + "1").is_block_device():
-        shell("mkfs.vfat", block_device["name"] + "1")
-    elif Path(block_device["name"] + "p1").is_block_device():
-        shell("mkfs.vfat", block_device["name"] + "p1")
-
-    print(":floppy_disk: creating ext4 file system on root partition")
-    if Path(block_device["name"] + "2").is_block_device():
-        shell("mkfs.ext4", "-O", "^has_journal", block_device["name"] + "2")
-    elif Path(block_device["name"] + "p2").is_block_device():
-        shell("mkfs.ext4", "-O", "^has_journal", block_device["name"] + "p2")
-
-    # https://gist.github.com/elerch/678941eb670324ffc3f261eabba81310
-
-
-def prepare(block_device):
-    """
-    Prepare SD card.
-
-    To dump partition table:
-        sudo sfdisk -d /dev/mmcblk0 > ./files/partition_table
-    """
-    log.info(":toilet: zapping removable media")
-    shell("wipefs", "--all", "--force", block_device["name"])
-    shell("sgdisk", "--zap-all", block_device["name"])
-
-    # print('- creating partitions')
-    # shell(
-    #     'sgdisk', '--new=1:0:+256M', '--typecode=1:0700', '-c1:boot', block_device['name'])
-    # print('- creating paritions')
-    # shell(
-    #     'sgdisk', '--largest-new=2', '--typecode=2:8300', '-c2:arch', block_device['name'])
-    # partition_table = os.path.join('paths']['files'], 'partition_table')
-    # os.system(f'sfdisk --wipe=always
-    # --wipe-partitions=always {block_device["name"]} < ./files/partition_table')
-
-    log.info(":table_tennis_paddle_and_ball: creating partition tables")
-    os.system(f'sfdisk {block_device["name"]} < ./files/partition_table')
-    os.system("partprobe")
-
-    log.info(":floppy_disk: creating vfat file system on boot partition")
-    if Path(block_device["name"] + "1").is_block_device():
-        shell("mkfs.vfat", block_device["name"] + "1")
-    elif Path(block_device["name"] + "p1").is_block_device():
-        shell("mkfs.vfat", block_device["name"] + "p1")
-
-    log.info(":floppy_disk: creating ext4 file system on root partition")
-    if Path(block_device["name"] + "2").is_block_device():
-        shell("mkfs.ext4", "-O", "^has_journal", block_device["name"] + "2")
-    elif Path(block_device["name"] + "p2").is_block_device():
-        shell("mkfs.ext4", "-O", "^has_journal", block_device["name"] + "p2")
 
 
 def unmount_tree(root: Path):
     """Unmount mounts from given root path."""
+    if not root.is_mount():
+        log.info("%s is not mounted", root)
+        return
+
     mounted_devices = []
 
     for partition in psutil.disk_partitions():
@@ -566,6 +462,86 @@ def unmount_tree(root: Path):
     mounted_devices.reverse()
     for device in mounted_devices:
         shell("sudo", "umount", device)
+
+
+def partition_block_device(block_device: str):
+    """
+    Create GPT partition table.
+
+    Dump partition table:
+        sudo sfdisk -d /dev/mmcblk0 > ./files/partition_table
+    """
+    shell(
+        "sudo",
+        "sgdisk",
+        "--new=1:0:+200M",
+        "--typecode=1:ef00",
+        "--attributes=1:set:2",
+        block_device,
+    )
+
+    shell("sudo", "sgdisk", "--largest-new=2", "--typecode=2:8300", block_device)
+    shell("sudo", "partprobe")
+
+
+def get_partition_path(block_device: str, partition_number: int):
+    """Determine and return partition path."""
+    if Path(f"{block_device}{partition_number}").is_block_device():
+        return f"{block_device}{partition_number}"
+
+    if Path(f"{block_device}p{partition_number}").is_block_device():
+        return f"{block_device}p{partition_number}"
+
+    log.critical(
+        "Could not determine partition number %s for device: %s",
+        partition_number,
+        block_device,
+    )
+    raise SystemExit(1)
+
+
+def format_partition_vfat(label: str, path: str):
+    """Format partition with vfat file system."""
+    log.info(":floppy_disk: creating vfat file system on: %s", path)
+    shell("sudo", "mkfs.vfat", "-n", label, "-F", "32", path)
+
+
+def format_partition_ext4(label: str, path: str):
+    """Format block device."""
+    log.info(":floppy_disk: creating ext4 file system on %s partition", label)
+    shell("sudo", "mkfs.ext4", "-O", "^has_journal", "-L", label, "-F", path)
+
+
+def prepare(block_device):
+    """
+    Prepare SD card.
+
+    To dump partition table:
+        sudo sfdisk -d /dev/mmcblk0 > ./files/partition_table
+    """
+    # print('- creating partitions')
+    # shell('sgdisk', '--new=1:0:+256M', '--typecode=1:0700', '-c1:boot', block_device['name'])
+    # shell('sgdisk', '--largest-new=2', '--typecode=2:8300', '-c2:arch', block_device['name'])
+    # partition_table = os.path.join('paths']['files'], 'partition_table')
+    # os.system(f'sfdisk --wipe=always --wipe-partitions=always {block_device["name"]} < ./files/partition_table')
+
+    log.info(":table_tennis_paddle_and_ball: creating partition tables")
+    os.system(f'sfdisk {block_device["name"]} < ./files/partition_table')
+    shell("partprobe")
+
+    # format_block_device(block_device)
+
+    # log.info(":floppy_disk: creating vfat file system on boot partition")
+    # if Path(block_device["name"] + "1").is_block_device():
+    #     shell("mkfs.vfat", block_device["name"] + "1")
+    # elif Path(block_device["name"] + "p1").is_block_device():
+    #     shell("mkfs.vfat", block_device["name"] + "p1")
+
+    # log.info(":floppy_disk: creating ext4 file system on root partition")
+    # if Path(block_device["name"] + "2").is_block_device():
+    #     shell("mkfs.ext4", "-O", "^has_journal", block_device["name"] + "2")
+    # elif Path(block_device["name"] + "p2").is_block_device():
+    #     shell("mkfs.ext4", "-O", "^has_journal", block_device["name"] + "p2")
 
 
 # def _mount_image(image_file, partition, bytes_offset):
@@ -592,7 +568,6 @@ def unmount_tree(root: Path):
 #
 # def _write_image(image_file, target):
 #     """Write an image with dd."""
-#     utils.__banner('writing image to block device (SD card)')
 #     print('* {} -> {}'.format(image_file, target))
 #     print('* this will probably take a while...\n')
 #     cmd = ['dd', 'if={}'.format(image_file), 'of={}'.format(target),
@@ -616,7 +591,7 @@ def unmount_tree(root: Path):
 #
 # def _grow_partition(target_device_name):
 #     """Grow partition size to the max."""
-#     utils.__banner('grow system partition')
+#     print('grow system partition')
 #     print('* growing {}'.format(target_device_name))
 #     partitions = shell('parted', target_device_name, '-ms', 'unit s p')
 #     partition = next((partition
@@ -639,10 +614,6 @@ def unmount_tree(root: Path):
 
 # def mount(path):
 #     """Mount boot and root partitions from raw image file or SD card."""
-#     if not os.path.exists(path):
-#         log.critical('path does not exist: %s', path)
-#         raise SystemExit(1)
-#
 #     file_output = shell('file', '-b', path)
 #     if file_output.split()[0] == b'DOS/MBR':
 #         byte_offsets = _get_partition_offsets(file_output)
