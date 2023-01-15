@@ -6,20 +6,43 @@ __license__ = "MIT"
 __status__ = "Development"
 
 
-from rich import print
+from pathlib import Path
 
-from .shell import run_command_show_output
+from .shell import shell
 
 
-def rsync_backup(source: str, destination: str, excludes: list[str]):
+def __build_rsync_command(
+    source: Path,
+    destination: str | Path,
+    excludes: list[str] | None = None,
+    dry: bool = False,
+):
+    """Construct rsync command."""
+    command = ["sudo", "-E", "rsync", "-aAXv", "--delete", "--delete-excluded"]
+
+    if dry:
+        command.append("--dry-run")
+
+    if excludes:
+        for exclude in excludes:
+            command.append("--exclude")
+            command.append(exclude)
+
+    command.append(f"{source}/")
+
+    if isinstance(destination, str):
+        command += ["-e", "ssh"]
+
+    command.append(str(destination))
+
+    return command
+
+
+def rsync(
+    source: Path,
+    destination: str | Path,
+    excludes: list[str] | None = None,
+    dry: bool = False,
+):
     """Rsync wrapper."""
-    command = ["sudo", "-E", "rsync", "-aAXv", "--delete", "--delete-excluded", source]
-    for exclude in excludes:
-        command.append("--exclude")
-        command.append(exclude)
-    command += ["-e", "ssh", destination]
-
-    command_string = " ".join(command)
-    print(command_string)
-
-    run_command_show_output(command)
+    shell(*__build_rsync_command(source, destination, excludes, dry))
