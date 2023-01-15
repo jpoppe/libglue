@@ -349,7 +349,7 @@ class Ansible:
                 "--limit",
                 limit,
                 "--diff",
-                playbook,
+                str(playbook),
                 "--become-method",
                 "sudo",
             ]
@@ -357,7 +357,7 @@ class Ansible:
             if check:
                 ansible_command.append("--check")
 
-            shell(ansible_command)
+            print(shell(*ansible_command).decode())
 
 
 class AnsibleCompletion:
