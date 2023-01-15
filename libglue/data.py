@@ -18,7 +18,7 @@ from xml.etree import ElementTree
 import yaml
 
 from .console import log
-from .shell import run_command
+from .shell import shell
 
 
 class Struct:
@@ -55,9 +55,9 @@ def yprint(obj):
     print(yaml.dump(obj, default_flow_style=False, Dumper=ExplicitDumper).strip())
 
 
-def load_command_json(command: str | List[str], env: Dict[str, str] | None = None, cwd: Path | None = None):
+def load_command_json(command: List[str], env: Dict[str, str] | None = None, cwd: Path | None = None):
     """Run command with JSON lines, return lines as dictionary."""
-    return load_json(run_command(command, env, cwd).stdout.decode("utf-8"))
+    return load_json(shell(*command, env, cwd))
 
 
 def sort_dictionary(dictionary: Dict[Path, Any]):
@@ -78,7 +78,12 @@ def sort_list_by_dictionary_value(items: list[Dict[str, Any]], key: str):
 def dump_yaml(data: dict[Any, Any], explicit_start: bool = True):
     """Dump Python object as YAML."""
     return yaml.dump(
-        data, default_flow_style=False, indent=2, sort_keys=False, explicit_start=explicit_start, Dumper=IndentAllDumper
+        data,
+        default_flow_style=False,
+        indent=2,
+        sort_keys=False,
+        explicit_start=explicit_start,
+        Dumper=IndentAllDumper,
     )
 
 
