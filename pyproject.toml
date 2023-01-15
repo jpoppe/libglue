@@ -1,3 +1,9 @@
+[tool.black]
+experimental-string-processing = true
+line-length = 120
+skip-string-normalization = false
+target-version = ["py310"]
+
 [tool.isort]
 include_trailing_comma = false
 line_length = 120
