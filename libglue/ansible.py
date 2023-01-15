@@ -76,7 +76,7 @@ from .console import log
 from .convert import convert
 from .data import query
 from .file_system import create_directory, load_json_directory_with_age, load_json_file_with_age
-from .shell import execute
+from .shell import shell
 
 app_name = sys.argv[0].rsplit("/", maxsplit=1)[-1]
 
@@ -287,10 +287,16 @@ class FactsManager:
     def collect(self, inventories: str | Path | Enum | list[str | Path | Enum], target: str):
         """Collect facts."""
         for inventory_file in _get_inventory_files(self.inventories_directory, inventories):
-            ansible_command = f"ansible --inventory {inventory_file}"
-            ansible_command += f" --module-name gather_facts --tree '{self.directory}' {target}"
-            execute(ansible_command)
-            # ansible_command += f" --module-name gather_facts --tree '{facts_directory / inventory_name}' {target}"
+            shell(
+                "ansible",
+                "--inventory",
+                inventory_file,
+                "--module-name",
+                "gather_facts",
+                "--tree",
+                self.directory,
+                target,
+            )
 
 
 class Ansible:
@@ -298,7 +304,11 @@ class Ansible:
 
     _sources: list[str] = []
 
-    def __init__(self, inventories_directory: Path, sources: str | Path | Enum | list[str | Path | Enum] = "all"):
+    def __init__(
+        self,
+        inventories_directory: Path,
+        sources: str | Path | Enum | list[str | Path | Enum] = "all",
+    ):
         """Initialize service."""
         loader = DataLoader()
         self._sources = _get_inventory_files(inventories_directory, sources)
@@ -327,14 +337,27 @@ class Ansible:
     def play(self, playbook: Path, limit: str, check: bool = True, std_out_callback: str | None = None):
         """Run playbook."""
         for inventory_file in self._sources:
-            ansible_command = ""
+            ansible_command = []
+
             if std_out_callback:
-                ansible_command += f"ANSIBLE_STDOUT_CALLBACK={std_out_callback} "
-            ansible_command += f"ansible-playbook --inventory {inventory_file} --limit {limit} --diff {playbook}"
-            ansible_command += " --ask-become-pass --become-method sudo"
+                ansible_command.append(f"ANSIBLE_STDOUT_CALLBACK={std_out_callback}")
+
+            ansible_command += [
+                "ansible-playbook",
+                "--inventory",
+                inventory_file,
+                "--limit",
+                limit,
+                "--diff",
+                playbook,
+                "--become-method",
+                "sudo",
+            ]
+
             if check:
-                ansible_command += " --check"
-            execute(ansible_command)
+                ansible_command.append("--check")
+
+            shell(ansible_command)
 
 
 class AnsibleCompletion:
@@ -356,6 +379,10 @@ class AnsibleCompletion:
             return []
 
         return Ansible(self.inventories_directory, inventory_name).hosts
+
+    def complete_argument_host(self):
+        """Inventory host completion."""
+        return Ansible(self.inventories_directory, "all").hosts
 
     def complete_argument_inventory_target(self, ctx: typer.Context):
         """Inventory target (host or group) completion."""
